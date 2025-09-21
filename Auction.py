@@ -35,7 +35,7 @@ if submitted and name and bid > 0:
     st.session_state.bids[name] = bid
 
     # Random competitor bid
-    competitor_bid = random.randint(0, 10000) * 100
+    competitor_bid = random.randint(0, 100000) * 100
 
     # Show results
     st.subheader("📢 Auction Result:")
@@ -58,4 +58,5 @@ if st.session_state.bids:
         st.write(f"👉 **{bidder}**: ${bidding_amount:.2f}")
 
     winner = max(st.session_state.bids, key=st.session_state.bids.get)
+
     st.success(f"🏆 The winner is **{winner}** with a bid of ${st.session_state.bids[winner]:.2f}")
