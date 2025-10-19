@@ -71,7 +71,10 @@ st.set_page_config(page_title="🏥 Hospital Management System", layout="centere
 st.title("🏥 Hospital Management System")
 st.caption("Streamlit Interactive Version – Single File Edition")
 
-menu = st.sidebar.radio("Navigation", ["New Visit", "Reports Dashboard", "Patient History"])
+menu = st.sidebar.radio(
+    "Navigation",
+    ["New Visit", "Reports Dashboard", "Patient History", "📊 Dashboard Overview"]
+)
 
 # -----------------------
 # 1️⃣ REGISTER NEW VISIT
@@ -228,3 +231,52 @@ elif menu == "Patient History":
                     ["invoice_id", "visit_datetime", "consultation",
                      "department", "doctor", "payment_mode", "total_fee", "follow_up"]
                 ])
+# -----------------------
+# 4️⃣ DASHBOARD OVERVIEW
+# -----------------------
+elif menu == "📊 Dashboard Overview":
+    st.subheader("📊 Hospital Performance Dashboard")
+
+    df = load_patients()
+    if df.empty:
+        st.warning("No patient data available.")
+    else:
+        df["visit_date"] = pd.to_datetime(df["visit_datetime"]).dt.date
+        df["visit_month"] = pd.to_datetime(df["visit_datetime"]).dt.to_period("M")
+
+        # Key Metrics
+        total_visits = len(df)
+        total_revenue = df["total_fee"].sum()
+        unique_patients = df["patient_id"].nunique()
+
+        st.markdown("### 💡 Quick Stats")
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Total Visits", total_visits)
+        col2.metric("Unique Patients", unique_patients)
+        col3.metric("Total Revenue", f"₹{total_revenue}")
+
+        # Chart 1: Revenue Over Time
+        st.markdown("### 📈 Revenue Trend (Last 30 Days)")
+        recent = df[df["visit_date"] >= (datetime.now().date() - timedelta(days=30))]
+        if not recent.empty:
+            chart_data = (
+                recent.groupby("visit_date")["total_fee"]
+                .sum()
+                .reset_index()
+                .rename(columns={"visit_date": "Date", "total_fee": "Revenue"})
+            )
+            st.line_chart(chart_data, x="Date", y="Revenue")
+        else:
+            st.info("No visits in the last 30 days.")
+
+        # Chart 2: Department Distribution
+        st.markdown("### 🏥 Visits by Department")
+        dept_counts = df["department"].value_counts().reset_index()
+        dept_counts.columns = ["Department", "Visits"]
+        st.bar_chart(dept_counts, x="Department", y="Visits")
+
+        # Chart 3: Doctor Revenue Leaderboard
+        st.markdown("### 🩺 Top Doctors by Revenue")
+        doctor_rev = df.groupby("doctor")["total_fee"].sum().sort_values(ascending=False).reset_index()
+        st.dataframe(doctor_rev)
+
