@@ -28,10 +28,15 @@ DEPARTMENTS = {
 # -----------------------
 # HELPER FUNCTIONS
 # -----------------------
-
 def load_patients():
+    """Load patient data or create a new file if missing."""
     if not os.path.exists(PATIENT_FILE):
-        return pd.DataFrame()
+        pd.DataFrame(columns=[
+            "invoice_id", "patient_id", "name", "guardian_name",
+            "contact_number", "address", "consultation", "department",
+            "doctor", "payment_mode", "visit_datetime", "visit_number",
+            "follow_up", "total_fee"
+        ]).to_csv(PATIENT_FILE, index=False)
     return pd.read_csv(PATIENT_FILE)
 
 
@@ -46,9 +51,8 @@ def generate_patient_id(patients):
     return f"P{last_id + 1:03d}"
 
 
-def generate_invoice_id(patients):
-    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-    return f"INV-{timestamp}"
+def generate_invoice_id():
+    return f"INV-{datetime.now().strftime('%Y%m%d%H%M%S')}"
 
 
 def find_patient(patients, name, contact):
@@ -64,22 +68,74 @@ def find_patient(patients, name, contact):
 
 
 # -----------------------
-# STREAMLIT UI STARTS HERE
+# STREAMLIT CONFIG
 # -----------------------
-
 st.set_page_config(page_title="🏥 Hospital Management System", layout="centered")
 st.title("🏥 Hospital Management System")
-st.caption("Streamlit Interactive Version – Single File Edition")
+st.caption("Streamlit Interactive Version – Dashboard First Layout")
 
+st.markdown("""
+<style>
+    .stMetric label {font-size: 14px; color: #444;}
+    .stMetric div {font-size: 20px; font-weight: bold;}
+</style>
+""", unsafe_allow_html=True)
+
+# Sidebar Navigation
 menu = st.sidebar.radio(
     "Navigation",
-    ["New Visit", "Reports Dashboard", "Patient History", "📊 Dashboard Overview"]
+    ["📊 Dashboard Overview", "➕ New Visit", "📖 Patient History", "📈 Reports Dashboard"]
 )
 
+
 # -----------------------
-# 1️⃣ REGISTER NEW VISIT
+# 1️⃣ DASHBOARD OVERVIEW
 # -----------------------
-if menu == "New Visit":
+if menu == "📊 Dashboard Overview":
+    st.subheader("📊 Hospital Performance Dashboard")
+
+    df = load_patients()
+    if df.empty:
+        st.warning("No patient data available yet.")
+    else:
+        df["visit_date"] = pd.to_datetime(df["visit_datetime"]).dt.date
+        df["visit_month"] = pd.to_datetime(df["visit_datetime"]).dt.to_period("M")
+
+        total_visits = len(df)
+        total_revenue = df["total_fee"].sum()
+        unique_patients = df["patient_id"].nunique()
+
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Total Visits", total_visits)
+        col2.metric("Unique Patients", unique_patients)
+        col3.metric("Total Revenue", f"₹{total_revenue}")
+
+        st.markdown("---")
+        st.markdown("### 📈 Revenue Trend (Last 30 Days)")
+        recent = df[df["visit_date"] >= (datetime.now().date() - timedelta(days=30))]
+        if not recent.empty:
+            chart_data = (
+                recent.groupby("visit_date")["total_fee"]
+                .sum().reset_index()
+                .rename(columns={"visit_date": "Date", "total_fee": "Revenue"})
+            )
+            st.line_chart(chart_data, x="Date", y="Revenue")
+        else:
+            st.info("No visits in the last 30 days.")
+
+        st.markdown("### 🏥 Visits by Department")
+        dept_counts = df["department"].value_counts().reset_index()
+        dept_counts.columns = ["Department", "Visits"]
+        st.bar_chart(dept_counts, x="Department", y="Visits")
+
+        st.markdown("### 🩺 Top Doctors by Revenue")
+        doctor_rev = df.groupby("doctor")["total_fee"].sum().sort_values(ascending=False).reset_index()
+        st.dataframe(doctor_rev)
+
+# -----------------------
+# 2️⃣ NEW VISIT
+# -----------------------
+elif menu == "➕ New Visit":
     st.subheader("➕ Register New Visit")
 
     name = st.text_input("Patient Name")
@@ -95,8 +151,7 @@ if menu == "New Visit":
             st.success(f"Returning patient found! ID: {existing['patient_id']}")
             st.session_state["patient"] = existing
         else:
-            st.info("New patient. Please continue registration.")
-            st.session_state["patient"] = {
+            new_patient = {
                 "patient_id": generate_patient_id(patients),
                 "name": name,
                 "guardian_name": guardian,
@@ -104,11 +159,12 @@ if menu == "New Visit":
                 "address": address,
                 "visit_number": 0
             }
+            st.info("New patient. Continue registration below.")
+            st.session_state["patient"] = new_patient
 
     if "patient" in st.session_state:
         patient = st.session_state["patient"]
         st.write(f"**Patient ID:** {patient['patient_id']}")
-        st.write(f"**Name:** {patient['name']}")
 
         consultation = st.selectbox("Consultation Type", list(CONSULTATION_FEES.keys()))
         department = st.selectbox("Department", list(DEPARTMENTS.keys()))
@@ -121,7 +177,7 @@ if menu == "New Visit":
 
         if st.button("Save Visit"):
             patients = load_patients()
-            invoice_id = generate_invoice_id(patients)
+            invoice_id = generate_invoice_id()
             visit_datetime = datetime.now().strftime("%Y-%m-%d %H:%M")
 
             new_record = {
@@ -147,16 +203,41 @@ if menu == "New Visit":
                 patients = pd.concat([patients, pd.DataFrame([new_record])], ignore_index=True)
 
             save_patients(patients)
-
-            st.success(f"✅ Visit saved successfully! Total Fee: ₹{total_fee}")
+            st.success(f"✅ Visit saved! Total Fee: ₹{total_fee}")
             st.write(new_record)
             del st.session_state["patient"]
 
 # -----------------------
-# 2️⃣ REPORTS DASHBOARD
+# 3️⃣ PATIENT HISTORY
 # -----------------------
-elif menu == "Reports Dashboard":
-    st.subheader("📊 Reports Dashboard")
+elif menu == "📖 Patient History":
+    st.subheader("📖 View Patient History")
+
+    name = st.text_input("Patient Name")
+    contact = st.text_input("Contact Number")
+
+    if st.button("Search"):
+        df = load_patients()
+        if df.empty:
+            st.warning("No records found.")
+        else:
+            records = df[
+                (df["name"].str.lower() == name.lower())
+                & (df["contact_number"].astype(str) == contact)
+            ]
+            if records.empty:
+                st.info("No history found for this patient.")
+            else:
+                st.dataframe(records[
+                    ["invoice_id", "visit_datetime", "consultation",
+                     "department", "doctor", "payment_mode", "total_fee", "follow_up"]
+                ])
+
+# -----------------------
+# 4️⃣ REPORTS DASHBOARD
+# -----------------------
+elif menu == "📈 Reports Dashboard":
+    st.subheader("📈 Reports Dashboard")
 
     df = load_patients()
     if df.empty:
@@ -186,97 +267,14 @@ elif menu == "Reports Dashboard":
             if weekly.empty:
                 st.info("No visits this week.")
             else:
-                summary = (
-                    weekly.groupby("visit_date")["total_fee"]
-                    .agg(Visits="count", Revenue="sum")
-                    .reset_index()
-                )
+                summary = weekly.groupby("visit_date")["total_fee"].agg(Visits="count", Revenue="sum").reset_index()
                 st.dataframe(summary)
                 st.metric("Total Visits", summary["Visits"].sum())
                 st.metric("Total Revenue", f"₹{summary['Revenue'].sum()}")
 
         elif report_type == "Monthly":
-            monthly = (
-                df.groupby("visit_month")["total_fee"]
-                .agg(Visits="count", Revenue="sum")
-                .reset_index()
-            )
+            monthly = df.groupby("visit_month")["total_fee"].agg(Visits="count", Revenue="sum").reset_index()
             st.markdown("### 🧾 Monthly Summary")
             st.dataframe(monthly)
             st.metric("Total Visits", monthly["Visits"].sum())
             st.metric("Total Revenue", f"₹{monthly['Revenue'].sum()}")
-
-# -----------------------
-# 3️⃣ PATIENT HISTORY
-# -----------------------
-elif menu == "Patient History":
-    st.subheader("📖 View Patient History")
-
-    name = st.text_input("Patient Name")
-    contact = st.text_input("Contact Number")
-
-    if st.button("Search"):
-        df = load_patients()
-        if df.empty:
-            st.warning("No records found.")
-        else:
-            records = df[
-                (df["name"].str.lower() == name.lower())
-                & (df["contact_number"].astype(str) == contact)
-            ]
-            if records.empty:
-                st.info("No history found for this patient.")
-            else:
-                st.dataframe(records[
-                    ["invoice_id", "visit_datetime", "consultation",
-                     "department", "doctor", "payment_mode", "total_fee", "follow_up"]
-                ])
-# -----------------------
-# 4️⃣ DASHBOARD OVERVIEW
-# -----------------------
-elif menu == "📊 Dashboard Overview":
-    st.subheader("📊 Hospital Performance Dashboard")
-
-    df = load_patients()
-    if df.empty:
-        st.warning("No patient data available.")
-    else:
-        df["visit_date"] = pd.to_datetime(df["visit_datetime"]).dt.date
-        df["visit_month"] = pd.to_datetime(df["visit_datetime"]).dt.to_period("M")
-
-        # Key Metrics
-        total_visits = len(df)
-        total_revenue = df["total_fee"].sum()
-        unique_patients = df["patient_id"].nunique()
-
-        st.markdown("### 💡 Quick Stats")
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Total Visits", total_visits)
-        col2.metric("Unique Patients", unique_patients)
-        col3.metric("Total Revenue", f"₹{total_revenue}")
-
-        # Chart 1: Revenue Over Time
-        st.markdown("### 📈 Revenue Trend (Last 30 Days)")
-        recent = df[df["visit_date"] >= (datetime.now().date() - timedelta(days=30))]
-        if not recent.empty:
-            chart_data = (
-                recent.groupby("visit_date")["total_fee"]
-                .sum()
-                .reset_index()
-                .rename(columns={"visit_date": "Date", "total_fee": "Revenue"})
-            )
-            st.line_chart(chart_data, x="Date", y="Revenue")
-        else:
-            st.info("No visits in the last 30 days.")
-
-        # Chart 2: Department Distribution
-        st.markdown("### 🏥 Visits by Department")
-        dept_counts = df["department"].value_counts().reset_index()
-        dept_counts.columns = ["Department", "Visits"]
-        st.bar_chart(dept_counts, x="Department", y="Visits")
-
-        # Chart 3: Doctor Revenue Leaderboard
-        st.markdown("### 🩺 Top Doctors by Revenue")
-        doctor_rev = df.groupby("doctor")["total_fee"].sum().sort_values(ascending=False).reset_index()
-        st.dataframe(doctor_rev)
-
