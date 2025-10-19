@@ -87,6 +87,20 @@ menu = st.sidebar.radio(
     ["📊 Dashboard Overview", "➕ New Visit", "📖 Patient History", "📈 Reports Dashboard"]
 )
 
+st.sidebar.markdown("""
+<style>
+[data-testid="stSidebar"] {
+    background-color: #f0f2f6;
+}
+[data-testid="stSidebar"] h1 {
+    font-size: 22px;
+    color: #2c3e50;
+}
+</style>
+""", unsafe_allow_html=True)
+
+st.sidebar.title("🏥 Hospital Menu")
+
 
 # -----------------------
 # 1️⃣ DASHBOARD OVERVIEW
@@ -278,3 +292,4 @@ elif menu == "📈 Reports Dashboard":
             st.dataframe(monthly)
             st.metric("Total Visits", monthly["Visits"].sum())
             st.metric("Total Revenue", f"₹{monthly['Revenue'].sum()}")
+
