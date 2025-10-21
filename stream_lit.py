@@ -90,10 +90,10 @@ if st.session_state.is_running and not st.session_state.is_paused:
     if st.session_state.remaining_time > 0:
         time.sleep(1)
         st.session_state.remaining_time -= 1
-        st.experimental_rerun()
+        st.rerun()
     else:
         next_timer()
-        st.experimental_rerun()
+        st.rerun()
 
 # ---------------------------- LOG & STATUS ------------------------------- #
 st.markdown("---")
@@ -103,3 +103,4 @@ for entry in reversed(st.session_state.log):
 
 st.markdown("---")
 st.caption("Tip: Use 'Pause' and 'Resume' to control your focus time.")
+
